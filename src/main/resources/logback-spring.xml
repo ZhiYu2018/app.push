@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <appender name="console" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%date{yyyy-MM-dd HH:mm:ss.SSS} %X{tid} [%thread] %-5level %logger{36}.%M %line - %msg%n</pattern>
+        </encoder>
+    </appender>
+	<appender name="rollingFile" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>./logs/push_api.log.tmp</file>
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>./logs/push_api-%d{yyyy-MM-dd_HH}.%i.log</fileNamePattern>
+			<maxHistory>1000</maxHistory>
+            <maxFileSize>100MB</maxFileSize>
+			<totalSizeCap>20GB</totalSizeCap>  
+        </rollingPolicy>
+        <encoder>
+            <pattern>%date{yyyy-MM-dd HH:mm:ss} %X{tid} [%thread] %-5level %logger{36}.%M %line - %msg%n</pattern>
+        </encoder>
+    </appender>
+	<root level="info">
+		<appender-ref ref="rollingFile" />
+	</root>
+</configuration>
