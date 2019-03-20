@@ -1,25 +1,33 @@
 package push.front.api.xmpp;
 
+import java.util.List;
+
 public class XmppNotification {
-	/**fcm 抽象的ios和安卓共有的字段**/
-	private String title;
-	private String body;
-	private String sound;
-	private String click_action;
-	private String body_loc_key;
-	private String body_loc_args;
-	private String title_loc_key;
-	private String title_loc_args;
+	// ios
+	String title;
+	String body;
+	String sound;
+	String badge;
+	String click_action;
+	String subtitle;
+	String body_loc_key;
+	List<String> body_loc_args;
+	String title_loc_key;
+	List<String> title_loc_args;
 	
-	/**ios:专有**/
-	private String badge;
-	private String subtitle;
-	
-	/**android:专有**/
-	private String android_channel_id;
-	private String icon;
-	private String tag;
-	private String color;
+	//Android
+	//String title;
+	//String body;
+	String android_channel_id;
+	String icon;
+	//String sound;
+	String tag;
+	String color;
+	//String click_action;
+	//String body_loc_key;
+	//List<String> body_loc_args;
+	//String title_loc_key;
+	//List<String> title_loc_args;
 	public String getTitle() {
 		return title;
 	}
@@ -38,11 +46,23 @@ public class XmppNotification {
 	public void setSound(String sound) {
 		this.sound = sound;
 	}
+	public String getBadge() {
+		return badge;
+	}
+	public void setBadge(String badge) {
+		this.badge = badge;
+	}
 	public String getClick_action() {
 		return click_action;
 	}
 	public void setClick_action(String click_action) {
 		this.click_action = click_action;
+	}
+	public String getSubtitle() {
+		return subtitle;
+	}
+	public void setSubtitle(String subtitle) {
+		this.subtitle = subtitle;
 	}
 	public String getBody_loc_key() {
 		return body_loc_key;
@@ -50,10 +70,10 @@ public class XmppNotification {
 	public void setBody_loc_key(String body_loc_key) {
 		this.body_loc_key = body_loc_key;
 	}
-	public String getBody_loc_args() {
+	public List<String> getBody_loc_args() {
 		return body_loc_args;
 	}
-	public void setBody_loc_args(String body_loc_args) {
+	public void setBody_loc_args(List<String> body_loc_args) {
 		this.body_loc_args = body_loc_args;
 	}
 	public String getTitle_loc_key() {
@@ -62,23 +82,11 @@ public class XmppNotification {
 	public void setTitle_loc_key(String title_loc_key) {
 		this.title_loc_key = title_loc_key;
 	}
-	public String getTitle_loc_args() {
+	public List<String> getTitle_loc_args() {
 		return title_loc_args;
 	}
-	public void setTitle_loc_args(String title_loc_args) {
+	public void setTitle_loc_args(List<String> title_loc_args) {
 		this.title_loc_args = title_loc_args;
-	}
-	public String getBadge() {
-		return badge;
-	}
-	public void setBadge(String badge) {
-		this.badge = badge;
-	}
-	public String getSubtitle() {
-		return subtitle;
-	}
-	public void setSubtitle(String subtitle) {
-		this.subtitle = subtitle;
 	}
 	public String getAndroid_channel_id() {
 		return android_channel_id;
@@ -104,4 +112,13 @@ public class XmppNotification {
 	public void setColor(String color) {
 		this.color = color;
 	}
+	
+	//Web
+	//String title;
+	//String body;
+	//String icon;
+	//String click_action;
+	
+	
+
 }

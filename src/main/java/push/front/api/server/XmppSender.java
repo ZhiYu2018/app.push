@@ -63,7 +63,7 @@ public class XmppSender implements Sender{
 	private static final int FCM_PROD_PORT = 5235;
 	private static final int FCM_TEST_PORT = 5236;
 	private static final String FCM_SERVER_AUTH_CONNECTION = "gcm.googleapis.com";
-	
+	private static final int MAX_RATE_SECOND = 500;
 	private static Logger logger = LoggerFactory.getLogger(XmppSender.class);
 	private volatile boolean reconnecting;
 	private volatile boolean isConnectionDraining;
@@ -86,7 +86,9 @@ public class XmppSender implements Sender{
 			timestamp = System.currentTimeMillis();
 		}
 	}
+	
 	private final Map<String, Jobs> syncMessages;
+	private final Map<String, Jobs> pendingMessages;
 	
 	public XmppSender(String userId, String apiKey, boolean prd){
 		this.reconnecting = false;
@@ -97,8 +99,9 @@ public class XmppSender implements Sender{
 		this.userId = userId + "@" + FCM_SERVER_AUTH_CONNECTION;;
 		this.apiKey = apiKey;
 		this.prd    = prd;
-		rateLimiter = RateLimiter.create(200);
+		rateLimiter = RateLimiter.create(MAX_RATE_SECOND);
 		syncMessages = new ConcurrentHashMap<>();
+		pendingMessages = new ConcurrentHashMap<>();
 		ProviderManager.addExtensionProvider(FcmPacketExtension.FCM_ELEMENT_NAME, 
 				                             FcmPacketExtension.FCM_NAMESPACE,
 		                                     new ExtensionElementProvider<FcmPacketExtension>() {
@@ -161,6 +164,11 @@ public class XmppSender implements Sender{
 						                    Constent.FAILED_RSP,
 						                    "Net exceptions");
 				ApiStat.get().push(si);
+				/**put to pending message**/
+				pendingMessages.put(message_id, stanza);
+			}else{
+				/**put to sync message**/
+				syncMessages.put(message_id, stanza);
 			}
 		}
 		
@@ -185,12 +193,9 @@ public class XmppSender implements Sender{
 				backoff.doNotRetry();
 				r = 0;
 			}catch(Throwable t){
-				logger.error("Send msgId:{},exceptions:", msgId, t.getMessage());
+				logger.error("Send msgId:{},exceptions:", msgId, t);
 				backoff.errorOccured();
 			}
-		}
-		if(r == 0){
-			syncMessages.put(msgId, request);
 		}
 		return r;
 	}
@@ -279,8 +284,15 @@ public class XmppSender implements Sender{
 	
 	
 	public void onUserAuthentication(){
-		Map<String, Jobs> syncJobs = new HashMap<>(this.syncMessages);
-		this.syncMessages.clear();
+		logger.info("Pending:{}, Sync:{}", pendingMessages.size(), syncMessages.size());
+		Map<String, Jobs> syncJobs = new HashMap<>(syncMessages);
+		Map<String, Jobs> pendingJobs = new HashMap<>(pendingMessages);
+		
+		/**clear**/
+		syncMessages.clear();
+		pendingMessages.clear();
+		
+		syncJobs.putAll(pendingJobs);
 		for(Map.Entry<String, Jobs> kv :syncJobs.entrySet()){
 			Jobs job = kv.getValue();
 			if(job.timestamp < (System.currentTimeMillis() - 1000 * 60L)){
@@ -297,6 +309,11 @@ public class XmppSender implements Sender{
                                        Util.getDateTimeStr(System.currentTimeMillis()),
                                        job.token, Constent.FAILED_RSP, "Net exceptions");
 				ApiStat.get().push(si);
+				/***put to pending**/
+				pendingMessages.put(kv.getKey(), job);
+			}else{
+				/***put to sync message**/
+				syncMessages.put(kv.getKey(), job);
 			}
 		}
 	}
@@ -314,7 +331,7 @@ public class XmppSender implements Sender{
 	}
 	
 	private void doReconnect(){
-		BackOffStrategy backoff = new BackOffStrategy(5, 1000);
+		BackOffStrategy backoff = new BackOffStrategy();
 		while (backoff.shouldRetry()){
 			 if(connect() == 0){
 				 backoff.doNotRetry();
@@ -367,12 +384,13 @@ public class XmppSender implements Sender{
             	logger.info("Received: Type:{}, From:{}, category:{}, data:{}",
         			         ctrl.getMessage_type(), ctrl.getFrom(), 
         			         ctrl.getCategory(), ctrl.getData());
+            	Map<String, Object> data = new HashMap<>();
+            	data = JSON.parseObject(ctrl.getData(), data.getClass());
+            	String token = data.getOrDefault("device_registration_id", ctrl.getFrom()).toString();
             	StatInfo si = new StatInfo(ctrl.getMessage_id(), 
             			                   ctrl.getMessage_id(),
   		                                   Util.getDateTimeStr(System.currentTimeMillis()),
-  		                                   ctrl.getFrom(), 
-  		                                   Constent.OK_RSP, 
-  		                                   "receipt");
+  		                                   token, Constent.OK_RSP, "receipt");
             	ApiStat.get().push(si);
             	removeAsyncJob(ctrl.getMessage_id());
             	return ;

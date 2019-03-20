@@ -1,85 +1,57 @@
 package push.front.api.util;
 
-import java.util.Random;
-
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.google.api.client.util.ExponentialBackOff;
 
 public class BackOffStrategy {
-	private static final Logger logger = LoggerFactory.getLogger(BackOffStrategy.class);
-	public static final int DEFAULT_RETRIES = 3;
-	public static final long DEFAULT_WAIT_TIME_IN_MILLI = 1000;
-	private int numberOfRetries;
-	private int numberOfTriesLeft;
-	private long defaultTimeToWait;
-	private long timeToWait;
-	private Random random = new Random();
-
+	private static final int deFinterval = 500;
+	private static final int defMaxInterval = 1000*60;
+	private static final int defMaxElapsedTime = 1000*60*5;
+	private static final int defMaxRetry = 8;
+	private static double deFmultiplier = 1.5;
+	private ExponentialBackOff boff;
+	private long backOffMill;
+	private final int maxTry;
+	private int count;
 	public BackOffStrategy() {
-	    this(DEFAULT_RETRIES, DEFAULT_WAIT_TIME_IN_MILLI);
+		this(defMaxRetry, deFinterval, deFmultiplier);
+	}
+	
+	public BackOffStrategy(int maxTry, long interval, double maxAttempts){
+		ExponentialBackOff.Builder bld = new ExponentialBackOff.Builder();
+		bld.setInitialIntervalMillis(deFinterval);
+		bld.setMaxElapsedTimeMillis(defMaxElapsedTime);
+		bld.setMultiplier(deFmultiplier);
+		bld.setMaxIntervalMillis(defMaxInterval);
+		boff = bld.build();
+		this.maxTry = maxTry;
+		count = 0;
+	}
+	
+	public boolean shouldRetry(){
+		return (count < maxTry);
+	}
+	
+	
+	
+	public long getBackOffMillis(){
+		return backOffMill;
+	}
+	
+	public void doNotRetry(){
+		count = maxTry;
+	}
+	
+	public void errorOccured(){
+		try{
+			count ++;
+			backOffMill = boff.nextBackOffMillis();
+			if(backOffMill != ExponentialBackOff.STOP){
+				Thread.sleep(backOffMill);
+			}
+		}catch(Throwable t){
+			
+		}
 	}
 
-	  public BackOffStrategy(int numberOfRetries, long defaultTimeToWait) {
-	    this.numberOfRetries = numberOfRetries;
-	    this.numberOfTriesLeft = numberOfRetries;
-	    this.defaultTimeToWait = defaultTimeToWait;
-	    this.timeToWait = defaultTimeToWait;
-	  }
 
-	  /**
-	   * @return true if there are tries left
-	   */
-	  public boolean shouldRetry() {
-	    return numberOfTriesLeft > 0;
-	  }
-
-	  public void errorOccured2() throws Exception {
-	    numberOfTriesLeft--;
-	    if (!shouldRetry()) {
-	      throw new Exception(
-	          "Retry Failed: Total of attempts: " + numberOfRetries + ". Total waited time: " + timeToWait + "ms.");
-	    }
-	    waitUntilNextTry();
-	    timeToWait *= 2;
-	    // we add a random time (recommendation from google)
-	    timeToWait += random.nextInt(500);
-	  }
-
-	  public void errorOccured() {
-	    numberOfTriesLeft--;
-	    if (!shouldRetry()) {
-	      logger.info("Retry Failed: Total of attempts: {}. Total waited time: {} ms.", numberOfRetries, timeToWait);
-	    }
-	    waitUntilNextTry();
-	    timeToWait *= 2;
-	    // we add a random time (google recommendation)
-	    timeToWait += random.nextInt(500);
-	  }
-
-	  private void waitUntilNextTry() {
-	    try {
-	      Thread.sleep(timeToWait);
-	    } catch (InterruptedException e) {
-	      logger.info("Error waiting until next try for the backoff strategy. Error: {}", e.getMessage());
-	    }
-	  }
-
-	  public long getTimeToWait() {
-	    return this.timeToWait;
-	  }
-
-	  /**
-	   * Use this method when the call was successful otherwise it will continue in an infinite loop
-	   */
-	  public void doNotRetry() {
-	    numberOfTriesLeft = 0;
-	  }
-
-	  /**
-	   * Reset back off state. Call this method after successful attempts if you want to reuse the class.
-	   */
-	  public void reset() {
-	    this.numberOfTriesLeft = numberOfRetries;
-	    this.timeToWait = defaultTimeToWait;
-	  }
 }

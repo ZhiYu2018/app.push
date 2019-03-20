@@ -113,7 +113,7 @@ public class FSdkSender implements Sender{
 			messages.add(Util.buileFcmMessage(msg));
 			rateLimiter.acquire();
 			if(messages.size() >= 200){
-				ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, msg.isDryRun());
+				ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, msg.getDryRun());
 				Job job = new Job(future);
 				pushJob(job);
 				messages.clear();
@@ -121,7 +121,7 @@ public class FSdkSender implements Sender{
 		}
 		
 		if(!messages.isEmpty()){
-			ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, msg.isDryRun());
+			ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, msg.getDryRun());
 			Job job = new Job(future);
 			pushJob(job);
 		}

@@ -16,20 +16,14 @@ public class XmppMessage {
 	private String message_id;
 	private String collapse_key;
 	private String priority;
-	/**IOS**/
-	private boolean content_available;
-	private boolean mutable_content;
-	private long time_to_live;
-	private boolean delivery_receipt_requested;
-	private boolean dry_run;
+	private Long time_to_live;
+	private Boolean delivery_receipt_requested;
+	private Boolean dry_run;
 	private XmppNotification notification;
-	private Map<String,Object> data;
-	public XmppMessage(){
-		this.priority = "normal";
-		this.time_to_live = 4 * 7 * 3600L;
-		this.dry_run = false;
-	}
-	
+	private Map<String,Object> data;	
+	/**IOS**/
+	private Boolean content_available;
+	private Boolean mutable_content;
 	public String getTo() {
 		return to;
 	}
@@ -60,34 +54,22 @@ public class XmppMessage {
 	public void setPriority(String priority) {
 		this.priority = priority;
 	}
-	public boolean isContent_available() {
-		return content_available;
-	}
-	public void setContent_available(boolean content_available) {
-		this.content_available = content_available;
-	}
-	public boolean isMutable_content() {
-		return mutable_content;
-	}
-	public void setMutable_content(boolean mutable_content) {
-		this.mutable_content = mutable_content;
-	}
-	public long getTime_to_live() {
+	public Long getTime_to_live() {
 		return time_to_live;
 	}
-	public void setTime_to_live(long time_to_live) {
+	public void setTime_to_live(Long time_to_live) {
 		this.time_to_live = time_to_live;
 	}
-	public boolean isDelivery_receipt_requested() {
+	public Boolean getDelivery_receipt_requested() {
 		return delivery_receipt_requested;
 	}
-	public void setDelivery_receipt_requested(boolean delivery_receipt_requested) {
+	public void setDelivery_receipt_requested(Boolean delivery_receipt_requested) {
 		this.delivery_receipt_requested = delivery_receipt_requested;
 	}
-	public boolean isDry_run() {
+	public Boolean getDry_run() {
 		return dry_run;
 	}
-	public void setDry_run(boolean dry_run) {
+	public void setDry_run(Boolean dry_run) {
 		this.dry_run = dry_run;
 	}
 	public XmppNotification getNotification() {
@@ -102,5 +84,17 @@ public class XmppMessage {
 	public void setData(Map<String, Object> data) {
 		this.data = data;
 	}
-	
+	public Boolean getContent_available() {
+		return content_available;
+	}
+	public void setContent_available(Boolean content_available) {
+		this.content_available = content_available;
+	}
+	public Boolean getMutable_content() {
+		return mutable_content;
+	}
+	public void setMutable_content(Boolean mutable_content) {
+		this.mutable_content = mutable_content;
+	}
+
 }

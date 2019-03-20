@@ -10,10 +10,10 @@ public class ApiFcmMessage {
 	private  String token;
 	private  String topic;
 	private  String condition;
-	private  boolean dryRun;
+	private  Boolean dryRun;
 	
 	public ApiFcmMessage(){
-		dryRun = false;
+		dryRun = Boolean.FALSE;
 	}
 	
 	public Map<String, String> getData() {
@@ -64,10 +64,10 @@ public class ApiFcmMessage {
 	public void setCondition(String condition) {
 		this.condition = condition;
 	}
-	public boolean isDryRun() {
+	public Boolean getDryRun() {
 		return dryRun;
 	}
-	public void setDryRun(boolean dryRun) {
+	public void setDryRun(Boolean dryRun) {
 		this.dryRun = dryRun;
 	}
 }
