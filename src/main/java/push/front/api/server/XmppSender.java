@@ -343,6 +343,7 @@ public class XmppSender implements Sender{
 	
 	private void removeAsyncJob(String msgId){
 		this.syncMessages.remove(msgId);
+		this.pendingMessages.remove(msgId);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -361,16 +362,16 @@ public class XmppSender implements Sender{
                 		    resp.getMessage_id(),resp.getMessage_type(),resp.getFrom(), 
                 		    resp.getError());
                 StatInfo si = null;
+                String customId = Util.getCustomId(resp.getMessage_id());
                 if(messageType.equals("ack")){
-                	si = new StatInfo(resp.getMessage_id(), 
+                	si = new StatInfo(customId, 
                 		              resp.getMessage_id(),
                 		              Util.getDateTimeStr(System.currentTimeMillis()),
                 		              resp.getFrom(), Constent.OK_RSP, "ack");
                 }else{
-                	si = new StatInfo(resp.getMessage_id(), 
-      		              resp.getMessage_id(),
-      		              Util.getDateTimeStr(System.currentTimeMillis()),
-      		              resp.getFrom(), Constent.FAILED_RSP, resp.getError());
+                	si = new StatInfo(customId, resp.getMessage_id(),
+      		                          Util.getDateTimeStr(System.currentTimeMillis()),
+      		                          resp.getFrom(), Constent.FAILED_RSP, resp.getError());
                 	if((resp.getError() != null) && (resp.getError().equals("CONNECTION_DRAINING"))){
                 		this.setConnectionDraining();
                 	}
@@ -387,7 +388,8 @@ public class XmppSender implements Sender{
             	Map<String, Object> data = new HashMap<>();
             	data = JSON.parseObject(ctrl.getData(), data.getClass());
             	String token = data.getOrDefault("device_registration_id", ctrl.getFrom()).toString();
-            	StatInfo si = new StatInfo(ctrl.getMessage_id(), 
+            	String customId = Util.getCustomId(ctrl.getMessage_id());
+            	StatInfo si = new StatInfo(customId, 
             			                   ctrl.getMessage_id(),
   		                                   Util.getDateTimeStr(System.currentTimeMillis()),
   		                                   token, Constent.OK_RSP, "receipt");

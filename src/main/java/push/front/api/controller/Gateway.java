@@ -36,6 +36,7 @@ public class Gateway {
 		}
 		
 		rsp = router.router(req);
+		rsp.setSerialId(Util.randomString(18));
 		return rsp;
 	}
 

@@ -2,7 +2,7 @@ package push.front.api.pojo;
 
 import java.util.Map;
 public class ApiFcmMessage {
-	private  Map<String, String> data;
+	private  Map<String, Object> data;
 	private  ApiFcmNotification notification;
 	private  ApiAndroidConfig androidConfig;
 	private  ApiWebpushConfig webpushConfig;
@@ -16,10 +16,10 @@ public class ApiFcmMessage {
 		dryRun = Boolean.FALSE;
 	}
 	
-	public Map<String, String> getData() {
+	public Map<String, Object> getData() {
 		return data;
 	}
-	public void setData(Map<String, String> data) {
+	public void setData(Map<String, Object> data) {
 		this.data = data;
 	}
 	public ApiFcmNotification getNotification() {

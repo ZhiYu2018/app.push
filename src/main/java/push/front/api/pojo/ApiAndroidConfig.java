@@ -5,10 +5,15 @@ import java.util.Map;
 public class ApiAndroidConfig {
 	private String collapseKey;
 	private String priority;
-	private Long ttl;
+	private long ttl;
 	private String restrictedPackageName;
 	private Map<String, String> data;
 	private ApiAndroidNotification notification;
+	
+	public ApiAndroidConfig(){
+		ttl = 2419200L;
+	}
+	
 	public String getCollapseKey() {
 		return collapseKey;
 	}
@@ -21,10 +26,10 @@ public class ApiAndroidConfig {
 	public void setPriority(String priority) {
 		this.priority = priority;
 	}
-	public Long getTtl() {
+	public long getTtl() {
 		return ttl;
 	}
-	public void setTtl(Long ttl) {
+	public void setTtl(long ttl) {
 		this.ttl = ttl;
 	}
 	public String getRestrictedPackageName() {

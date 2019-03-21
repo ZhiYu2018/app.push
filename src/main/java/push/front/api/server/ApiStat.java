@@ -30,7 +30,7 @@ public class ApiStat {
 			public void run() {
 				dump();
 			}});
-		thStat.setName("bcm.stat");
+		thStat.setName("api.push.stat");
 		thStat.start();
 	}
 	
@@ -100,7 +100,7 @@ public class ApiStat {
 			dir.mkdirs();
 		}
 		
-		File outFile = new File("./data/" + today + "_" + curFileNo + ".stat");
+		File outFile = new File("./data/api_" + today + "_" + curFileNo + ".data");
 		boolean append = outFile.exists();
 		if(outFile.exists()){
 			if((lastOpen != 0) && ((System.currentTimeMillis() - lastOpen) >= MAX_FILE_TIME)){

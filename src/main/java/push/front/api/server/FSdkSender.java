@@ -6,6 +6,8 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.PriorityQueue;
 import java.util.Queue;
+import java.util.concurrent.atomic.AtomicLong;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,25 +26,37 @@ import push.front.api.pojo.ApiFcmMessage;
 import push.front.api.pojo.ApiRequest;
 import push.front.api.pojo.ApiResponse;
 import push.front.api.pojo.Constent;
+import push.front.api.pojo.StatInfo;
 import push.front.api.util.Util;
 
 public class FSdkSender implements Sender{
-	//private static final String SUCCESS_RETURN_PREFIX = "projects/";
+	private final static int MAX_RATE = 500;
+	private final static int MAX_BATCH = 50;
+	private final static String SUCCESS_PREFIX = "/projects/";
 	private static Logger logger = LoggerFactory.getLogger(FSdkSender.class);
 	private boolean isOk;
-	//private String prefix;
-	//private AtomicLong msgSeq;
+	private final String prefix;
+	private final AtomicLong msgSeq;
 	private RateLimiter rateLimiter;
 	private Thread futureThread;
 	private class Job{
 		private long time;
 		private int retryCount;
+		private String customId;
+		private List<String> tokenList;
+		private List<String> msgIdsList;
 		private ApiFuture<BatchResponse> future;
 		
-		public Job(ApiFuture<BatchResponse> future) {
+		public Job(String cid, 
+				   List<String> tokens, 
+				   List<String> msgIds, 
+				   ApiFuture<BatchResponse> future) {
 			super();
 			this.time = System.currentTimeMillis()/1000 + Util.getWaitTimeExp(retryCount, 1);
 			this.retryCount = 0;
+			this.customId  = cid;
+			this.tokenList = new ArrayList<>(tokens);
+			this.msgIdsList = new ArrayList<>(msgIds);
 			this.future = future;
 		}
 		
@@ -62,9 +76,9 @@ public class FSdkSender implements Sender{
 	
 	public FSdkSender(String accFile){
 		isOk = false;
-		//prefix = Util.randomString(5);
-		//msgSeq = new AtomicLong();
-		rateLimiter = RateLimiter.create(500);
+		this.prefix = Util.randomString(5);
+		this.msgSeq = new AtomicLong();
+		rateLimiter = RateLimiter.create(MAX_RATE);
 		try(FileInputStream serviceAccount = new FileInputStream(accFile)){
 			isOk = true;
 			FirebaseOptions.Builder bd = new FirebaseOptions.Builder();
@@ -107,23 +121,39 @@ public class FSdkSender implements Sender{
 		apiRsp.setStat(200);
 		apiRsp.setReason("Submit");
 		ApiFcmMessage msg = JSON.parseObject(req.getData().toString(), ApiFcmMessage.class);
+		List<String> tokens = new ArrayList<>();
+		List<String> msgIds = new ArrayList<>();
 		List<Message> messages = new ArrayList<>();
 		for(String token:req.getToken_list()){
+			tokens.add(token);
+			String message_id = String.format("%s-%d.%s", prefix, msgSeq.incrementAndGet(), req.getMsgId());
+			msgIds.add(message_id);
 			msg.setToken(token);
 			messages.add(Util.buileFcmMessage(msg));
-			rateLimiter.acquire();
-			if(messages.size() >= 200){
-				ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, msg.getDryRun());
-				Job job = new Job(future);
+			
+			if(messages.size() >= MAX_BATCH){
+				rateLimiter.acquire(messages.size());
+				boolean dryRun = msg.getDryRun();
+				ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, dryRun);
+				Job job = new Job(req.getMsgId(), tokens, msgIds, future);
 				pushJob(job);
-				messages.clear();
+				
+				tokens.clear();
+				msgIds.clear();
+				/**new a new**/
+				messages = new ArrayList<>();
 			}
 		}
 		
 		if(!messages.isEmpty()){
-			ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, msg.getDryRun());
-			Job job = new Job(future);
+			rateLimiter.acquire(messages.size());
+			boolean dryRun = msg.getDryRun();
+			ApiFuture<BatchResponse> future = FirebaseMessaging.getInstance().sendAllAsync(messages, dryRun);
+			Job job = new Job(req.getMsgId(), tokens, msgIds, future);
 			pushJob(job);
+			
+			tokens.clear();
+			msgIds.clear();
 		}
 		
 		return apiRsp;
@@ -173,17 +203,40 @@ public class FSdkSender implements Sender{
 				try{
 					BatchResponse response = future.get();
 					logger.info("Success:{}, Failed:{}", 
-							    response.getSuccessCount(), response.getFailureCount());
+							    response.getSuccessCount(), 
+							    response.getFailureCount());
 					List<SendResponse> lst = response.getResponses();
+					int i = 0;
 					for(SendResponse rs:lst){
+						StatInfo si = null;
 						if(rs.isSuccessful()){
-							logger.info("Success:{}", rs.getMessageId());
+							String success = (rs.getMessageId().startsWith(SUCCESS_PREFIX)? "success":"failed");
+							si = new StatInfo(job.customId, job.msgIdsList.get(i),
+              		                          Util.getDateTimeStr(System.currentTimeMillis()),
+              		                          job.tokenList.get(i), 
+              		                          Constent.OK_RSP, success);
+							logger.info("Send to {}: MessagId:{}, Success:{}", 
+									     job.tokenList.get(i),
+									     job.tokenList.get(i),
+									     rs.getMessageId());
 						}else{
-							logger.error("Failed:{}", rs.getException().getErrorCode());
+							si = new StatInfo(job.customId, job.msgIdsList.get(i),
+    		                                  Util.getDateTimeStr(System.currentTimeMillis()),
+    		                                  job.tokenList.get(i), 
+    		                                  Constent.FAILED_RSP,
+    		                                  rs.getException().getErrorCode());
+							logger.error("Send to {}: MessagId:{}, Failed:{}", 
+								         job.tokenList.get(i),
+								         job.tokenList.get(i),
+								         rs.getException().getErrorCode());
 						}
+						
+						ApiStat.get().push(si);
+						i = i + 1;
 					}
 					
 				}catch(Throwable t){
+					logger.info("check exceptions:", t);
 				}
 			}
 		}

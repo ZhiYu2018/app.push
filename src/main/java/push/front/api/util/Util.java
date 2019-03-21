@@ -5,6 +5,7 @@ import java.util.Calendar;
 import java.util.Date;
 import java.util.GregorianCalendar;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Random;
 
@@ -13,6 +14,7 @@ import com.google.firebase.messaging.AndroidConfig;
 import com.google.firebase.messaging.AndroidNotification;
 import com.google.firebase.messaging.ApnsConfig;
 import com.google.firebase.messaging.Message;
+import com.google.firebase.messaging.MulticastMessage;
 import com.google.firebase.messaging.Notification;
 import com.google.firebase.messaging.WebpushConfig;
 import com.google.firebase.messaging.WebpushNotification;
@@ -65,6 +67,14 @@ public class Util {
     	return TempWait;
     }
     
+    public static boolean strEqual(String src, String dst){
+    	if((src == null) || (dst == null)){
+    		return false;
+    	}
+    	
+    	return src.equals(dst);
+    }
+    
     public static Message buileFcmMessage(ApiFcmMessage msg){
 		Message.Builder builder = Message.builder();
 		
@@ -80,7 +90,7 @@ public class Util {
 			AndroidConfig.Builder acBuilder = AndroidConfig.builder();
 			acBuilder.setCollapseKey(msg.getAndroidConfig().getCollapseKey());
 			if(msg.getAndroidConfig().getPriority() != null){
-				if(msg.getAndroidConfig().getPriority().equalsIgnoreCase("HIGH")){
+				if(strEqual(msg.getAndroidConfig().getPriority(), "HIGH")){
 					acBuilder.setPriority(AndroidConfig.Priority.HIGH);
 				}else{
 					acBuilder.setPriority(AndroidConfig.Priority.NORMAL);
@@ -142,7 +152,11 @@ public class Util {
 		// token
 		builder.setToken(msg.getToken());
 		builder.setTopic(msg.getTopic());
-		builder.putAllData(msg.getData());
+		if(!msg.getData().isEmpty()){
+			for(Map.Entry<String, Object> obj: msg.getData().entrySet()){
+				builder.putData(obj.getKey(), obj.getValue().toString());
+			}
+		}
 		builder.setCondition(msg.getCondition());
 		return builder.build();
     }
@@ -170,6 +184,101 @@ public class Util {
     			                                                     priority,
     			                                                     msg.getCollapseId());
     	return notify;
+    }
+    
+    public static MulticastMessage builderMultMessage(List<String> tokens, ApiFcmMessage msg){
+    	MulticastMessage.Builder builder = MulticastMessage.builder();
+    	// token 
+    	builder.addAllTokens(tokens);
+    	
+    	// data
+		if(!msg.getData().isEmpty()){
+			for(Map.Entry<String, Object> obj: msg.getData().entrySet()){
+				builder.putData(obj.getKey(), obj.getValue().toString());
+			}
+		}
+    	
+		// notification
+		if(msg.getNotification() != null){
+			Notification notification = new Notification(msg.getNotification().getTitle(), 
+					                                     msg.getNotification().getBody());
+			builder.setNotification(notification);
+		}
+		
+		//android config
+		if(msg.getAndroidConfig() != null){
+			AndroidConfig.Builder acBuilder = AndroidConfig.builder();
+			acBuilder.setCollapseKey(msg.getAndroidConfig().getCollapseKey());
+			if(msg.getAndroidConfig().getPriority() != null){
+				if(strEqual(msg.getAndroidConfig().getPriority(), "HIGH")){
+					acBuilder.setPriority(AndroidConfig.Priority.HIGH);
+				}else{
+					acBuilder.setPriority(AndroidConfig.Priority.NORMAL);
+				}
+			}
+			if(msg.getAndroidConfig().getNotification() != null){
+				ApiAndroidNotification apiAnf = msg.getAndroidConfig().getNotification();
+				AndroidNotification anf = AndroidNotification.builder().setBody(apiAnf.getBody())
+						                  .setBodyLocalizationKey(apiAnf.getBodyLocKey())
+						                  .setClickAction(apiAnf.getClickAction())
+						                  .setColor(apiAnf.getColor())
+						                  .setIcon(apiAnf.getIcon())
+						                  .setSound(apiAnf.getSound())
+						                  .setTag(apiAnf.getTag())
+						                  .setTitle(apiAnf.getTitle())
+						                  .setTitleLocalizationKey(apiAnf.getTitleLocKey())
+						                  .addAllBodyLocalizationArgs(apiAnf.getBodyLocArgs())
+						                  .addAllTitleLocalizationArgs(apiAnf.getTitleLocArgs())
+						                  .build();
+				acBuilder.setNotification(anf);			                  
+			}
+			
+			acBuilder.setRestrictedPackageName(msg.getAndroidConfig().getRestrictedPackageName());
+			acBuilder.setTtl(msg.getAndroidConfig().getTtl());
+			builder.setAndroidConfig(acBuilder.build());
+		}
+		
+		// web push
+		if(msg.getWebpushConfig() != null){
+			ApiWebpushConfig wbpush = msg.getWebpushConfig();
+			WebpushConfig.Builder bld = WebpushConfig.builder();
+			if(wbpush.getNotification() != null){
+				bld.setNotification(new WebpushNotification(wbpush.getNotification().getTitle(), 
+						wbpush.getNotification().getBody(), wbpush.getNotification().getIcon()));
+			}
+			if(wbpush.getData() != null){
+				bld.putAllData(wbpush.getData());
+			}
+			if(wbpush.getHeaders() != null){
+				bld.putAllHeaders(wbpush.getHeaders());
+			}
+			
+			builder.setWebpushConfig(bld.build());
+		}
+		
+		// apns
+		if(msg.getApnsConfig() != null){
+			ApnsConfig.Builder bld = ApnsConfig.builder();
+			if(msg.getApnsConfig().getHeaders() != null){
+				bld.putAllHeaders(msg.getApnsConfig().getHeaders());
+			}
+			if(msg.getApnsConfig().getPayload() != null){
+				bld.putAllCustomData(msg.getApnsConfig().getPayload());
+			}
+			
+			builder.setApnsConfig(bld.build());
+		}   	
+    	
+    	return builder.build();
+    }
+    
+    public static String getCustomId(String msgId){
+    	int idx = msgId.indexOf(".");
+    	if(idx < 0){
+    		return msgId;
+    	}
+    	
+    	return msgId.substring(idx + 1);
     }
     
 	public static String getDateTimeStr(long ms){
