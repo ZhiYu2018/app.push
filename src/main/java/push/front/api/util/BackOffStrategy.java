@@ -4,14 +4,13 @@ import com.google.api.client.util.ExponentialBackOff;
 
 public class BackOffStrategy {
 	private static final int deFinterval = 500;
-	private static final int defMaxInterval = 1000*60;
-	private static final int defMaxElapsedTime = 1000*60*5;
+	private static final int defMaxInterval = 6000;
+	private static final int defMaxElapsedTime = 60000;
 	private static final int defMaxRetry = 8;
 	private static double deFmultiplier = 1.5;
 	private ExponentialBackOff boff;
 	private long backOffMill;
-	private final int maxTry;
-	private int count;
+	private boolean stopped;
 	public BackOffStrategy() {
 		this(defMaxRetry, deFinterval, deFmultiplier);
 	}
@@ -23,12 +22,14 @@ public class BackOffStrategy {
 		bld.setMultiplier(deFmultiplier);
 		bld.setMaxIntervalMillis(defMaxInterval);
 		boff = bld.build();
-		this.maxTry = maxTry;
-		count = 0;
+		stopped = false;
 	}
 	
 	public boolean shouldRetry(){
-		return (count < maxTry);
+		if(boff.getElapsedTimeMillis() < boff.getMaxElapsedTimeMillis()){
+			return (stopped == false);
+		}
+		return false;
 	}
 	
 	
@@ -38,12 +39,11 @@ public class BackOffStrategy {
 	}
 	
 	public void doNotRetry(){
-		count = maxTry;
+		stopped = true;
 	}
 	
 	public void errorOccured(){
 		try{
-			count ++;
 			backOffMill = boff.nextBackOffMillis();
 			if(backOffMill != ExponentialBackOff.STOP){
 				Thread.sleep(backOffMill);

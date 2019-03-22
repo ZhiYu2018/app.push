@@ -13,6 +13,7 @@ public class ApiContext {
 			}catch(Throwable t){
 				
 			}
+			try{Thread.sleep(200);}catch(Throwable t){}
 		}
 		return bQuit;
 	}
@@ -20,6 +21,6 @@ public class ApiContext {
 	public static void setQuit(){
 		bQuit = true;
 		/**通知退出**/
-		available.release(64);
+		available.release(128);
 	}
 }

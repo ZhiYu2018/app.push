@@ -73,6 +73,7 @@ public class XmppSender implements Sender{
 	private final String userId;
 	private final String apiKey;
 	private final boolean prd;
+	private volatile long lastTransportTime;
 	private boolean isOk;
 	private RateLimiter rateLimiter;
 	private volatile XMPPTCPConnection xmppConnection;
@@ -87,8 +88,8 @@ public class XmppSender implements Sender{
 		}
 	}
 	
-	private final Map<String, Jobs> syncMessages;
 	private final Map<String, Jobs> pendingMessages;
+	private final Map<String, Jobs> reTryMessages;
 	
 	public XmppSender(String userId, String apiKey, boolean prd){
 		this.reconnecting = false;
@@ -99,9 +100,10 @@ public class XmppSender implements Sender{
 		this.userId = userId + "@" + FCM_SERVER_AUTH_CONNECTION;;
 		this.apiKey = apiKey;
 		this.prd    = prd;
-		rateLimiter = RateLimiter.create(MAX_RATE_SECOND);
-		syncMessages = new ConcurrentHashMap<>();
-		pendingMessages = new ConcurrentHashMap<>();
+		this.lastTransportTime = System.currentTimeMillis()/1000;
+		this.rateLimiter = RateLimiter.create(MAX_RATE_SECOND);
+		this.pendingMessages = new ConcurrentHashMap<>();
+		this.reTryMessages = new ConcurrentHashMap<>();
 		ProviderManager.addExtensionProvider(FcmPacketExtension.FCM_ELEMENT_NAME, 
 				                             FcmPacketExtension.FCM_NAMESPACE,
 		                                     new ExtensionElementProvider<FcmPacketExtension>() {
@@ -117,6 +119,17 @@ public class XmppSender implements Sender{
 		Base64.setEncoder(new ApiB64Encoder());
 		isOk = false;
 		connect();
+		
+		/**xmpp 长连接重连
+		 * 从测试来看，有时需要重连，才能从FCM收到响应包
+		 * **/
+		Thread monitor = new Thread(new Runnable(){
+			@Override
+			public void run() {
+				monitor();
+			}});
+		monitor.setName("xmpp.monitor");
+		monitor.start();
 	}
 
 	@Override
@@ -164,11 +177,11 @@ public class XmppSender implements Sender{
 						                    Constent.FAILED_RSP,
 						                    "Net exceptions");
 				ApiStat.get().push(si);
+				/**put to retry message**/
+				reTryMessages.put(message_id, stanza);
+			}else{
 				/**put to pending message**/
 				pendingMessages.put(message_id, stanza);
-			}else{
-				/**put to sync message**/
-				syncMessages.put(message_id, stanza);
 			}
 		}
 		
@@ -265,7 +278,7 @@ public class XmppSender implements Sender{
 				}}, ForEveryStanza.INSTANCE);
 		    
 		    final PingManager pingManager = PingManager.getInstanceFor(xmppConn);
-		    pingManager.setPingInterval(100);
+		    pingManager.setPingInterval(90);
 		    pingManager.registerPingFailedListener(new ApiPingFailedListener(this, pingManager));
 		    
 		    /**add listen**/
@@ -274,6 +287,7 @@ public class XmppSender implements Sender{
 			logger.info("Connected to xmpp:{}", this.userId);
 			xmppConnection = xmppConn;
 			isConnectionDraining = false;
+			lastTransportTime = System.currentTimeMillis()/1000;
 			isOk = true;
 			return 0;
 		}catch(Throwable t){
@@ -284,13 +298,13 @@ public class XmppSender implements Sender{
 	
 	
 	public void onUserAuthentication(){
-		logger.info("Pending:{}, Sync:{}", pendingMessages.size(), syncMessages.size());
-		Map<String, Jobs> syncJobs = new HashMap<>(syncMessages);
-		Map<String, Jobs> pendingJobs = new HashMap<>(pendingMessages);
+		logger.info("Pending:{}, Sync:{}", reTryMessages.size(), pendingMessages.size());
+		Map<String, Jobs> syncJobs = new HashMap<>(pendingMessages);
+		Map<String, Jobs> pendingJobs = new HashMap<>(reTryMessages);
 		
 		/**clear**/
-		syncMessages.clear();
 		pendingMessages.clear();
+		reTryMessages.clear();
 		
 		syncJobs.putAll(pendingJobs);
 		for(Map.Entry<String, Jobs> kv :syncJobs.entrySet()){
@@ -310,15 +324,16 @@ public class XmppSender implements Sender{
                                        job.token, Constent.FAILED_RSP, "Net exceptions");
 				ApiStat.get().push(si);
 				/***put to pending**/
-				pendingMessages.put(kv.getKey(), job);
+				reTryMessages.put(kv.getKey(), job);
 			}else{
 				/***put to sync message**/
-				syncMessages.put(kv.getKey(), job);
+				pendingMessages.put(kv.getKey(), job);
 			}
 		}
 	}
 	
 	public void setConnectionDraining(){
+		logger.info("FCM Connection is draining!");
 		isConnectionDraining = true;
 	}
 	
@@ -342,8 +357,8 @@ public class XmppSender implements Sender{
 	}
 	
 	private void removeAsyncJob(String msgId){
-		this.syncMessages.remove(msgId);
 		this.pendingMessages.remove(msgId);
+		this.reTryMessages.remove(msgId);
 	}
 	
 	@SuppressWarnings("unchecked")
@@ -352,6 +367,9 @@ public class XmppSender implements Sender{
 		Map<String, Object> map = new HashMap<String, Object>();
 		map = JSON.parseObject(fcmPacket.getJson(), map.getClass());
 		Optional<Object> messageTypeObj = Optional.ofNullable(map.get("message_type"));
+		
+		/**通过ping有时没有办法解决问题**/
+		this.lastTransportTime = System.currentTimeMillis()/1000;
 		if(!messageTypeObj.isPresent()){
 			handleUpstreamMessage(JSON.parseObject(fcmPacket.getJson(), XmppInMessage.class));
 		}else{
@@ -409,6 +427,35 @@ public class XmppSender implements Sender{
             	}
 			}
 		}
+	}
+	
+	private void monitor(){
+		final int WAIT_SEC = 60;
+		final int MAX_LIVE_TIME = 3600;
+		while(true){
+			if(ApiContext.waitQuit(WAIT_SEC)){
+				break;
+			}
+			try{
+				long now = System.currentTimeMillis()/1000;
+				if((!isConnectionDraining) && ((now < (lastTransportTime + MAX_LIVE_TIME)))){
+					continue;
+				}
+				logger.info("Reconnecting ...isConnectionDraining {}, now {} > ({} + {})",
+						    isConnectionDraining,now, lastTransportTime, MAX_LIVE_TIME);
+				
+				/**先判断连接是否断掉**/
+				disconnect();
+			
+				isConnectionDraining = true;
+				reconnect();
+			}catch(Throwable t){
+				logger.warn("reconnect exceptions:",t);
+			}
+		}
+		
+		logger.info("Monitor is quitted");
+		disconnect();
 	}
 	
 	private void handleUpstreamMessage(XmppInMessage inMsg){

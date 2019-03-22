@@ -19,7 +19,7 @@ public class ApiPingFailedListener implements PingFailedListener{
 	@Override
 	public void pingFailed() {
 		logger.info("The ping failed, restarting the ping interval again ...");
-		pingManager.setPingInterval(100);
+		pingManager.setPingInterval(90);
 		sender.setConnectionDraining();
 	}
 
