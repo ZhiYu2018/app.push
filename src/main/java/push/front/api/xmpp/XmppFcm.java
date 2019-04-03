@@ -7,6 +7,9 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.net.ssl.SSLContext;
@@ -55,12 +58,14 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	private static final int FCM_PROD_PORT = 5235;
 	private static final int FCM_TEST_PORT = 5236;
 	private static final int MAX_RATE_SECOND = 500;
+	private static final int PENDING_SIZE = 100;
 	private static final String FCM_SERVER_AUTH_CONNECTION = "gcm.googleapis.com";
 	private static Logger logger = LoggerFactory.getLogger(XmppFcm.class);
 	private static final String prefix = Util.randomString(5);
 	private static final AtomicLong msgSeq = new AtomicLong();
 	private static final AtomicLong msgSender = new AtomicLong();
-	private static final RateLimiter rateLimiter = RateLimiter.create(MAX_RATE_SECOND);;
+	private static final RateLimiter rateLimiter = RateLimiter.create(MAX_RATE_SECOND);
+	private static final ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
 	
 	private String userId;
 	private String apiKey;
@@ -205,7 +210,8 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		int r = -1;
 		while(backoff.shouldRetry()){
 			try{
-				if(this.isConnectionDraining == false){
+				if((this.isConnectionDraining == false) 
+					&& (this.pendingMessages.size() < PENDING_SIZE)){
 					/**流控**/
 					rateLimiter.acquire();
 					xmppConnection.sendStanza(request);
@@ -215,7 +221,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 			}catch(Throwable t){
 				logger.error("Send msgId:{},exceptions:", msgId, t);
 			}
-			//
+			//error occured, and in back off
 			if(backoff.shouldRetry()){
 				backoff.errorOccured();
 			}
@@ -310,6 +316,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	}
 	
 	private synchronized void reconnect(){
+		logger.info("Reconnect ......");
 		BackOffStrategy backoff = new BackOffStrategy();
 		int r = -1;
 		while(backoff.shouldRetry()){
@@ -322,7 +329,15 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		}
 		
 		if(r != 0){
-			logger.info("reconnect failed.");
+			logger.warn("Reconnect failed.");
+			/**重连**/
+			executor.schedule(new Runnable(){
+				@Override
+				public void run() {
+					reconnect();
+			}}, 500, TimeUnit.MILLISECONDS);
+		}else{
+			logger.info("Reconnect success.");
 		}
 	}
 	 
@@ -342,12 +357,18 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	public void connectionClosed() {
 		logger.info("connectionClosed");
 		/**重连**/
-		reconnect();
+		executor.schedule(new Runnable(){
+			@Override
+			public void run() {
+				reconnect();
+			}}, 500, TimeUnit.MILLISECONDS);
 	}
 
 	@Override
 	public void connectionClosedOnError(Exception e) {
+		logger.info("connectionClosedOnError error:", e);
 		this.setConnectionDraining();
+		this.disconnectAll();
 	}
 
 	@Override
