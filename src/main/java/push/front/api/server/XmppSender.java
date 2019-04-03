@@ -59,7 +59,7 @@ public class XmppSender implements Sender{
 			msg.setMessage_id(message_id);
 			Stanza request = new FcmPacketExtension(JSON.toJSONString(msg)).toPacket();
 			XmppFcm fcm = getXmppFcm();			
-			fcm.sendStanza(token, message_id, request);
+			fcm.sendMsg(token, message_id, request);
 		}
 		
 		return apiRsp;
