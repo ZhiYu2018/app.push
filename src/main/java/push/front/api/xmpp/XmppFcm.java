@@ -205,7 +205,15 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		}
 	}
 	
-	public void sendStanza(String token, String msgId, Stanza request){
+	public void sendMsg(String token, String message_id, Stanza request){
+		Jobs job = new Jobs();
+		job.msgId = message_id;
+		job.token = token;
+		job.stanza = request;
+		sendStanza(job);
+	}
+	
+	private void sendStanza(Jobs job){
 		BackOffStrategy backoff = new BackOffStrategy();
 		int r = -1;
 		while(backoff.shouldRetry()){
@@ -214,12 +222,12 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 					&& (this.pendingMessages.size() < PENDING_SIZE)){
 					/**流控**/
 					rateLimiter.acquire();
-					xmppConnection.sendStanza(request);
+					xmppConnection.sendStanza(job.stanza);
 					backoff.doNotRetry();
 					r = 0;
 				}
 			}catch(Throwable t){
-				logger.error("Send msgId:{},exceptions:", msgId, t);
+				logger.error("Send msgId:{},exceptions:", job.msgId, t);
 			}
 			//error occured, and in back off
 			if(backoff.shouldRetry()){
@@ -227,14 +235,10 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 			}
 		}
 		
-		Jobs job = new Jobs();
-		job.msgId = msgId;
-		job.stanza = request;
-		job.token = token;
 		if(r != 0){
-			reTryMessages.put(msgId, job);
+			reTryMessages.put(job.msgId, job);
 		}else{
-			pendingMessages.put(msgId, job);
+			pendingMessages.put(job.msgId, job);
 		}
 	}
 
@@ -258,7 +262,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 				ApiStat.get().push(si);
 				continue;
 			}else{
-				sendStanza(job.token, job.msgId, job.stanza);
+				sendStanza(job);
 			}
 		}
 			
