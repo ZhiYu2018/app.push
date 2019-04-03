@@ -71,7 +71,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	private String apiKey;
 	private boolean prd;
 	private volatile boolean isConnectionDraining;
-	private volatile int pingFailedTimes;
+	//private volatile int pingFailedTimes;
 	private volatile XMPPTCPConnection xmppConnection;
 	
 	private class Jobs{
@@ -113,7 +113,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		this.prd    = prd;
 		this.xmppConnection = null;
 		this.isConnectionDraining = true;
-		this.pingFailedTimes = 0;
+		//this.pingFailedTimes = 0;
 		this.pendingMessages = new ConcurrentHashMap<>();
 		this.reTryMessages = new ConcurrentHashMap<>(); 
 		
@@ -147,15 +147,18 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		    config.setSocketFactory(sslContext.getSocketFactory());
 		    config.setCustomSSLContext(sslContext);
 		    config.setUsernameAndPassword(userId, apiKey);
+		    int port = 0;
 			if(this.prd){
-				config.setPort(FCM_PROD_PORT);
+				port = FCM_PROD_PORT;
+				
 			}else{
-				config.setPort(FCM_TEST_PORT);
+				port = FCM_TEST_PORT;
 			}
-			
-			logger.info("Connecting to xmpp:{}:{},{}", this.userId, this.apiKey, serviceName.toString());
+			config.setPort(port);
+			logger.info("Connecting to xmpp:{}:{},{},port:{}", this.userId, this.apiKey, 
+					    serviceName.toString(), port);
 			xmppConn = new XMPPTCPConnection(config.build());
-			ReconnectionManager.getInstanceFor(xmppConn).disableAutomaticReconnection();
+			ReconnectionManager.getInstanceFor(xmppConn).enableAutomaticReconnection();
 		    ReconnectionManager.getInstanceFor(xmppConn).addReconnectionListener(this);
 
 		    Roster.getInstanceFor(xmppConn).setRosterLoadedAtLogin(false);
@@ -236,6 +239,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		}
 		
 		if(r != 0){
+			logger.warn("Put message to retry q, for:{},{}", isConnectionDraining, pendingMessages.size());
 			reTryMessages.put(job.msgId, job);
 		}else{
 			pendingMessages.put(job.msgId, job);
@@ -371,8 +375,6 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	@Override
 	public void connectionClosedOnError(Exception e) {
 		logger.info("connectionClosedOnError error:", e);
-		this.setConnectionDraining();
-		this.disconnectAll();
 	}
 
 	@Override
@@ -380,13 +382,6 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		logger.info("The ping failed, restarting the ping interval again ...");
 		final PingManager pingManager = PingManager.getInstanceFor(xmppConnection);
 		pingManager.setPingInterval(60);
-		this.setConnectionDraining();
-		pingFailedTimes ++;
-		/**关闭自动重连**/
-		if(pingFailedTimes >= 3){
-			this.disconnectAll();
-			pingFailedTimes = 0;
-		}
 	}
 
 	@SuppressWarnings("unchecked")
