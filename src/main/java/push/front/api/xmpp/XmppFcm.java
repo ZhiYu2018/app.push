@@ -260,8 +260,8 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		Map<String, Jobs> syncJobs;
 		Map<String, Jobs> pendingJobs;
 		synchronized(this){
-			syncJobs = new HashMap<>(pendingMessages);
-			pendingJobs = new HashMap<>(reTryMessages);
+			syncJobs = new HashMap<>(reTryMessages);
+			pendingJobs = new HashMap<>(pendingMessages);
 			/**pengding 减去**/
 			int delta = pendingJobs.size() * (-1);
 			int num = pendingSize.addAndGet(delta);
