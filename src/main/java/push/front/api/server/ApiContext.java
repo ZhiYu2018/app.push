@@ -23,4 +23,8 @@ public class ApiContext {
 		/**通知退出**/
 		available.release(128);
 	}
+	
+	public static void stop(){
+		
+	}
 }

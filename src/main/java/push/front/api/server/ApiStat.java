@@ -109,7 +109,7 @@ public class ApiStat {
 				lastOpen = System.currentTimeMillis();
 			}
 		}
-		LOG.info("Open file name {}", outFile.getName());
+		LOG.debug("Open file name {}", outFile.getName());
 		try{
 			FileOutputStream fos = new FileOutputStream(outFile, append); 
 			return fos;

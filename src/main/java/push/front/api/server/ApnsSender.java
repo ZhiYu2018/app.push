@@ -201,6 +201,10 @@ public class ApnsSender implements Sender{
 		           Util.getDateTimeStr(System.currentTimeMillis()),
 		           job.getToken(), errorCode, desp));
 	}
+	@Override
+	public void restart() {
+		logger.info("apns reconnect");
+	}
 	
 
 }

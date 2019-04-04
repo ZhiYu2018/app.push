@@ -260,4 +260,9 @@ public class FSdkSender implements Sender{
 			}
 		}
 	}
+
+	@Override
+	public void restart() {
+		logger.info("fsdk reconnect");
+	}
 }
