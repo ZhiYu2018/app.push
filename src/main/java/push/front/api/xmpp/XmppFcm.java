@@ -226,12 +226,16 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 					&& xmppConnection.isAuthenticated()){
 					/**流控**/
 					rateLimiter.acquire();
+					pendingMessages.put(job.msgId, job);
+					pendingSize.incrementAndGet();
 					xmppConnection.sendStanza(job.stanza);
 					backoff.doNotRetry();
 					r = 0;
 				}
 			}catch(Throwable t){
 				logger.error("Send msgId:{},exceptions:", job.msgId, t);
+				/**异常remove**/
+				removePendingJob(job.msgId);
 			}
 			//error occured, and in back off
 			if(backoff.shouldRetry()){
@@ -246,9 +250,6 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 					    pendingSize.get(),
 					    reTryMessages.size());
 			
-		}else{
-			pendingMessages.put(job.msgId, job);
-			pendingSize.incrementAndGet();
 		}
 	}
 
@@ -256,19 +257,21 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	private void onUserAuthentication(){
 		logger.info("Retry:{}, Pending:{} of {} ", reTryMessages.size(), 
 				    pendingMessages.size(), pendingSize.get());
-		Map<String, Jobs> syncJobs = new HashMap<>(pendingMessages);
-		Map<String, Jobs> pendingJobs = new HashMap<>(reTryMessages);
-		
-		/**pengding 减去**/
-		int delta = pendingJobs.size() * (-1);
-		int num = pendingSize.addAndGet(delta);
-		if(num < 0){
-			logger.warn("There is some wrong: num {} < 0", num);
+		Map<String, Jobs> syncJobs;
+		Map<String, Jobs> pendingJobs;
+		synchronized(this){
+			syncJobs = new HashMap<>(pendingMessages);
+			pendingJobs = new HashMap<>(reTryMessages);
+			/**pengding 减去**/
+			int delta = pendingJobs.size() * (-1);
+			int num = pendingSize.addAndGet(delta);
+			if(num < 0){
+				logger.warn("There is some wrong: num {} < 0", num);
+			}
+			/**clear**/
+			pendingMessages.clear();
+			reTryMessages.clear();
 		}
-		
-		/**clear**/
-		pendingMessages.clear();
-		reTryMessages.clear();
 		
 		syncJobs.putAll(pendingJobs);
 		for(Map.Entry<String, Jobs> kv :syncJobs.entrySet()){
