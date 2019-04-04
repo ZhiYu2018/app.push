@@ -44,6 +44,19 @@ public class Util {
 		return METHOD_SUPPOERTED.get(m);
 	}
 	
+	public static String getKey(){
+		long cur_time = (System.currentTimeMillis()/1000)/300;
+		StringBuilder sb = new StringBuilder();
+		int len = numbersAndLetters.length;
+		while(cur_time > 0){
+			int c = (int)(cur_time % len);
+			sb.append(numbersAndLetters[c]);
+			cur_time = cur_time / len;
+		}
+		
+		return sb.toString();
+	}
+	
     public static String randomString(int length) {
         if (length < 1) {
             return null;
