@@ -10,6 +10,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 import javax.net.ssl.SSLContext;
@@ -55,14 +56,16 @@ import push.front.api.util.Util;
 
 public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFailedListener,StanzaListener{
 	private static final String FCM_SERVER = "fcm-xmpp.googleapis.com";
+	private static final long MAX_MSG_LIFE  = 1000*60*60L;
 	private static final int FCM_PROD_PORT = 5235;
 	private static final int FCM_TEST_PORT = 5236;
-	private static final int MAX_RATE_SECOND = 500;
+	private static final int MAX_RATE_SECOND = 300;
 	private static final int PENDING_SIZE = 100;
 	private static final String FCM_SERVER_AUTH_CONNECTION = "gcm.googleapis.com";
 	private static Logger logger = LoggerFactory.getLogger(XmppFcm.class);
 	private static final String prefix = Util.randomString(5);
 	private static final AtomicLong msgSeq = new AtomicLong();
+	private static final AtomicInteger pendingSize = new AtomicInteger();
 	private static final AtomicLong msgSender = new AtomicLong();
 	private static final RateLimiter rateLimiter = RateLimiter.create(MAX_RATE_SECOND);
 	private static final ScheduledExecutorService executor = Executors.newScheduledThreadPool(2);
@@ -71,7 +74,6 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	private String apiKey;
 	private boolean prd;
 	private volatile boolean isConnectionDraining;
-	//private volatile int pingFailedTimes;
 	private volatile XMPPTCPConnection xmppConnection;
 	
 	private class Jobs{
@@ -113,7 +115,6 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		this.prd    = prd;
 		this.xmppConnection = null;
 		this.isConnectionDraining = true;
-		//this.pingFailedTimes = 0;
 		this.pendingMessages = new ConcurrentHashMap<>();
 		this.reTryMessages = new ConcurrentHashMap<>(); 
 		
@@ -155,8 +156,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 				port = FCM_TEST_PORT;
 			}
 			config.setPort(port);
-			logger.info("Connecting to xmpp:{}:{},{},port:{}", this.userId, this.apiKey, 
-					    serviceName.toString(), port);
+			logger.info("Connecting to xmpp:{}, name:{}, port:{}", this.userId, serviceName.toString(), port);
 			xmppConn = new XMPPTCPConnection(config.build());
 			ReconnectionManager.getInstanceFor(xmppConn).enableAutomaticReconnection();
 		    ReconnectionManager.getInstanceFor(xmppConn).addReconnectionListener(this);
@@ -222,7 +222,8 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		while(backoff.shouldRetry()){
 			try{
 				if((this.isConnectionDraining == false) 
-					&& (this.pendingMessages.size() < PENDING_SIZE)){
+					&& (pendingSize.get() < PENDING_SIZE)
+					&& xmppConnection.isAuthenticated()){
 					/**流控**/
 					rateLimiter.acquire();
 					xmppConnection.sendStanza(job.stanza);
@@ -239,18 +240,31 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		}
 		
 		if(r != 0){
-			logger.warn("Put message to retry q, for:{},{}", isConnectionDraining, pendingMessages.size());
 			reTryMessages.put(job.msgId, job);
+			logger.warn("Put message to retry q, for: Draining {},pendingMessages {},size:{}", 
+					    isConnectionDraining, 
+					    pendingSize.get(),
+					    reTryMessages.size());
+			
 		}else{
 			pendingMessages.put(job.msgId, job);
+			pendingSize.incrementAndGet();
 		}
 	}
 
 	
 	private void onUserAuthentication(){
-		logger.info("Pending:{}, Sync:{}", reTryMessages.size(), pendingMessages.size());
+		logger.info("Retry:{}, Pending:{} of {} ", reTryMessages.size(), 
+				    pendingMessages.size(), pendingSize.get());
 		Map<String, Jobs> syncJobs = new HashMap<>(pendingMessages);
 		Map<String, Jobs> pendingJobs = new HashMap<>(reTryMessages);
+		
+		/**pengding 减去**/
+		int delta = pendingJobs.size() * (-1);
+		int num = pendingSize.addAndGet(delta);
+		if(num < 0){
+			logger.warn("There is some wrong: num {} < 0", num);
+		}
 		
 		/**clear**/
 		pendingMessages.clear();
@@ -259,7 +273,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		syncJobs.putAll(pendingJobs);
 		for(Map.Entry<String, Jobs> kv :syncJobs.entrySet()){
 			Jobs job = kv.getValue();
-			if(job.timestamp < (System.currentTimeMillis() - 1000 * 60L)){
+			if(job.timestamp < (System.currentTimeMillis() - MAX_MSG_LIFE)){
 				StatInfo si = new StatInfo(job.msgId, kv.getKey(),
                         Util.getDateTimeStr(System.currentTimeMillis()),
                         job.token, Constent.FAILED_RSP, "Drop old");
@@ -278,7 +292,15 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	}
 	
 	private void removePendingJob(String msgId){
-		pendingMessages.remove(msgId);
+		Jobs job = pendingMessages.remove(msgId);
+		if(job == null){
+			return ;
+		}
+		
+		int num = pendingSize.decrementAndGet();
+		if(num < 0){
+			logger.warn("There is some wrong: num {} < 0", num);
+		}
 	}
 	
 	private void handleUpstreamMessage(XmppInMessage inMsg){
@@ -303,12 +325,13 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
         }
 	}
 	
-	private void disconnectAll() {
+	public void disconnectAll() {
 		XMPPTCPConnection xmppConn = this.xmppConnection;
 	    if (xmppConn.isConnected()) {
 	        logger.info("Detaching all the listeners for the connection.");
 	        PingManager.getInstanceFor(xmppConn).unregisterPingFailedListener(this);
 	        ReconnectionManager.getInstanceFor(xmppConn).removeReconnectionListener(this);
+	        ReconnectionManager.getInstanceFor(xmppConn).disableAutomaticReconnection();
 	        xmppConn.removeAsyncStanzaListener(this);
 	        xmppConn.removeConnectionListener(this);
 	        xmppConn.removeStanzaInterceptor(this);
@@ -396,11 +419,11 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 			handleUpstreamMessage(JSON.parseObject(fcmPacket.getJson(), XmppInMessage.class));
 		}else{
 			String messageType = messageTypeObj.get().toString();
-			if(messageType.equals("ack") || messageType.equals("nack")){
+			if(messageType.equals("ack") || messageType.equals("nack")){				
 				XmppResponse resp = JSON.parseObject(fcmPacket.getJson(), XmppResponse.class);
-                logger.info("Received: Message_id:{}, Type:{}, From:{}, Error:{}" ,
-                		    resp.getMessage_id(),resp.getMessage_type(),resp.getFrom(), 
-                		    resp.getError());
+                logger.debug("Received: Message_id:{}, Type:{}, From:{}, Error:{}" ,
+                		      resp.getMessage_id(),resp.getMessage_type(),resp.getFrom(), 
+                		      resp.getError());
                 StatInfo si = null;
                 String customId = Util.getCustomId(resp.getMessage_id());
                 if(messageType.equals("ack")){
@@ -454,11 +477,15 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	@Override
 	public void reconnectingIn(int seconds) {
 		logger.info("Reconnecting in {} ...", seconds);
+		if(seconds >= 300){
+			disconnectAll();
+		}
 	}
 
 	@Override
 	public void reconnectionFailed(Exception e) {
 		logger.info("Reconnection failed! Error: {}", e.getMessage());
+		disconnectAll();
 	}
 
 }
