@@ -57,6 +57,7 @@ import push.front.api.util.Util;
 public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFailedListener,StanzaListener{
 	private static final String FCM_SERVER = "fcm-xmpp.googleapis.com";
 	private static final long MAX_MSG_LIFE  = 1000*60*60L;
+	private static final int MAX_RETRY_TIMES = 3;
 	private static final int FCM_PROD_PORT = 5235;
 	private static final int FCM_TEST_PORT = 5236;
 	private static final int MAX_RATE_SECOND = 300;
@@ -77,12 +78,12 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	private volatile XMPPTCPConnection xmppConnection;
 	
 	private class Jobs{
-		private long timestamp;
+		private int times;
 		private String msgId;
 		private String token;
 		private Stanza stanza;
 		public Jobs(){
-			timestamp = System.currentTimeMillis();
+			times = 0;
 		}
 	}
 	
@@ -276,7 +277,8 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		syncJobs.putAll(pendingJobs);
 		for(Map.Entry<String, Jobs> kv :syncJobs.entrySet()){
 			Jobs job = kv.getValue();
-			if(job.timestamp < (System.currentTimeMillis() - MAX_MSG_LIFE)){
+			job.times = job.times + 1;
+			if(job.times >= MAX_RETRY_TIMES){
 				StatInfo si = new StatInfo(job.msgId, kv.getKey(),
                         Util.getDateTimeStr(System.currentTimeMillis()),
                         job.token, Constent.FAILED_RSP, "Drop old");
@@ -382,7 +384,8 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 
 	@Override
 	public void authenticated(XMPPConnection connection, boolean resumed) {
-		logger.info("authenticated resumed:{}", resumed);
+		logger.info("authenticated resumed:{}, auth:{}", 
+				    resumed, connection.isAuthenticated());
 		isConnectionDraining = false;
 		onUserAuthentication();
 	}
