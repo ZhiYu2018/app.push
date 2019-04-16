@@ -56,7 +56,6 @@ import push.front.api.util.Util;
 
 public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFailedListener,StanzaListener{
 	private static final String FCM_SERVER = "fcm-xmpp.googleapis.com";
-	private static final long MAX_MSG_LIFE  = 1000*60*60L;
 	private static final int MAX_RETRY_TIMES = 3;
 	private static final int FCM_PROD_PORT = 5235;
 	private static final int FCM_TEST_PORT = 5236;
@@ -132,7 +131,8 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 	public int connect(){
 		XMPPTCPConnection xmppConn = null;
 		try{
-			DomainBareJid serviceName = JidCreate.domainBareFrom("gcm.googleapis.com");
+			//DomainBareJid serviceName = JidCreate.domainBareFrom("gcm.googleapis.com");
+			DomainBareJid serviceName = JidCreate.domainBareFrom("localhost");
 			XMPPTCPConnection.setUseStreamManagementResumptionDefault(true);
 			XMPPTCPConnection.setUseStreamManagementDefault(true);
 			final SSLContext sslContext = SSLContext.getInstance("TLS");
@@ -227,8 +227,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 					&& xmppConnection.isAuthenticated()){
 					/**流控**/
 					rateLimiter.acquire();
-					pendingMessages.put(job.msgId, job);
-					pendingSize.incrementAndGet();
+					putPendingJob(job);
 					xmppConnection.sendStanza(job.stanza);
 					backoff.doNotRetry();
 					r = 0;
@@ -296,6 +295,11 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		isConnectionDraining = true;
 	}
 	
+	private void putPendingJob(Jobs job){
+		pendingMessages.put(job.msgId, job);
+		pendingSize.incrementAndGet();
+	}
+	
 	private void removePendingJob(String msgId){
 		Jobs job = pendingMessages.remove(msgId);
 		if(job == null){
@@ -355,6 +359,7 @@ public class XmppFcm implements ConnectionListener, ReconnectionListener,PingFai
 		logger.info("Reconnect ......");
 		BackOffStrategy backoff = new BackOffStrategy();
 		int r = -1;
+		disconnectAll();
 		while(backoff.shouldRetry()){
 			if(this.connect() == 0){
 				backoff.doNotRetry();
